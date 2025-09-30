@@ -1,0 +1,30 @@
+name: AWS Connection Test
+
+on:
+  # 수동으로 실행할 수 있게 설정
+  workflow_dispatch:
+
+jobs:
+  test-aws-connection:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::727158410149:oidc-provider/token.actions.githubusercontent.com
+          aws-region: us-east-2
+          
+      - name: Test AWS Connection
+        run: |
+          # AWS 계정 ID 확인
+          aws sts get-caller-identity
+          
+          # AWS 리전 확인
+          aws configure get region
+          
+          # 선택적: S3 버킷 리스트 확인
+          aws s3 ls
