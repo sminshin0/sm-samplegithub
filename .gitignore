@@ -1,2 +1,35 @@
-.kiro/
-.vscode/
+# Terraform files
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfvars
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+
+# AWS credentials and keys
+.aws/
+aws-credentials.json
+*.pem
+*.key
+id_rsa*
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# IDE files
+.vscode/settings.json
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+crash.log
+crash.*.log
+
+# Temporary files
+*.tmp
+*.temp
