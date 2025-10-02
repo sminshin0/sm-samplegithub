@@ -17,7 +17,7 @@ variable "instance_type" {
 }
 
 variable "key_pair_name" {
-  description = "Name of the AWS key pair"
+  description = "Name of the AWS key pair (optional)"
   type        = string
-  default     = ""
+  default     = null
 }
