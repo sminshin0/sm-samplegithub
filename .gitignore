@@ -8,6 +8,7 @@ terraform/.terraform.lock.hcl
 # AWS credentials and keys
 .aws/
 aws-credentials.json
+aws-iam-policy.json
 *.pem
 *.key
 id_rsa*
