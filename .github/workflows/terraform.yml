@@ -1,11 +1,8 @@
-name: 'Terraform Deploy'
+name: 'Terraform Deploy (Legacy)'
 
-# 언제 실행할지 설정
+# 새로운 infrastructure-setup.yml 사용으로 비활성화
 on:
-  push:
-    branches: [ main ]
-    paths: [ 'terraform/**' ]  # terraform 폴더 변경 시에만
-  workflow_dispatch:  # 수동 실행 가능
+  workflow_dispatch:  # 수동 실행만 가능
 
 env:
   AWS_REGION: 'us-east-2'

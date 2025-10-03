@@ -35,10 +35,20 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Get ECR Repository URI
+    - name: Get or Create ECR Repository
       id: ecr
       run: |
-        ECR_URI=$(aws ecr describe-repositories --repository-names ${{ env.PROJECT_NAME }}-app --query 'repositories[0].repositoryUri' --output text)
+        # ECR 리포지토리 존재 확인
+        if aws ecr describe-repositories --repository-names ${{ env.PROJECT_NAME }}-app --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+          echo "✅ ECR 리포지토리가 존재합니다"
+          ECR_URI=$(aws ecr describe-repositories --repository-names ${{ env.PROJECT_NAME }}-app --query 'repositories[0].repositoryUri' --output text)
+        else
+          echo "📦 ECR 리포지토리를 생성합니다..."
+          aws ecr create-repository --repository-name ${{ env.PROJECT_NAME }}-app --region ${{ env.AWS_REGION }}
+          ECR_URI=$(aws ecr describe-repositories --repository-names ${{ env.PROJECT_NAME }}-app --query 'repositories[0].repositoryUri' --output text)
+          echo "✅ ECR 리포지토리 생성 완료"
+        fi
+        
         echo "ecr_uri=$ECR_URI" >> $GITHUB_OUTPUT
         echo "✅ ECR URI: $ECR_URI"
 
