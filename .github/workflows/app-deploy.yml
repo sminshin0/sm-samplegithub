@@ -52,6 +52,7 @@ jobs:
 
     - name: Build Docker image
       run: |
+        cd app
         IMAGE_TAG=v${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)
         echo "🐳 Docker 이미지 빌드 중..."
         echo "태그: $IMAGE_TAG"
