@@ -10,8 +10,7 @@ on:
       - 'go.sum'
       - 'Dockerfile'
       - 'k8s/**'
-    paths-ignore:
-      - 'terraform/**'  # terraform 폴더는 제외
+      - '.github/workflows/app-deploy.yml'
   pull_request:
     branches: [ main ]
     paths: 
@@ -20,12 +19,11 @@ on:
       - 'go.sum'
       - 'Dockerfile'
       - 'k8s/**'
-    paths-ignore:
-      - 'terraform/**'
+      - '.github/workflows/app-deploy.yml'
   workflow_dispatch:
 
 env:
-  AWS_REGION: 'us-east-2'
+  AWS_REGION: 'us-east-1'
   PROJECT_NAME: 'github-actions-terraform'
 
 jobs:
