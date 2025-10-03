@@ -42,11 +42,35 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    # 4. S3 Backend 확인
-    - name: Verify S3 Backend
+    # 4. DynamoDB 테이블 확인 및 생성
+    - name: Setup DynamoDB Lock Table
       run: |
         cd terraform
-        echo "✅ 고정 S3 Backend 사용 중:"
+        
+        # DynamoDB 테이블 존재 확인
+        if aws dynamodb describe-table --table-name terraform-state-lock-0ss4kx0a --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+          echo "✅ DynamoDB 테이블이 이미 존재합니다"
+        else
+          echo "📦 DynamoDB 테이블 생성 중..."
+          
+          # create-dynamodb.tf 파일이 있다면 사용해서 테이블 생성
+          if [ -f "create-dynamodb.tf" ]; then
+            # 임시로 backend 없이 초기화
+            mv backend.tf backend.tf.bak
+            terraform init
+            terraform apply -target=aws_dynamodb_table.terraform_state_lock -auto-approve
+            
+            # backend 복원
+            mv backend.tf.bak backend.tf
+            
+            # create-dynamodb.tf 삭제
+            rm -f create-dynamodb.tf
+            
+            echo "✅ DynamoDB 테이블 생성 완료"
+          fi
+        fi
+        
+        echo "✅ S3 Backend 설정:"
         echo "   버킷: terraform-state-0ss4kx0a"
         echo "   테이블: terraform-state-lock-0ss4kx0a"
         echo "   리전: ${{ env.AWS_REGION }}"
