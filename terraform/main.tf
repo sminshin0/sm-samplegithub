@@ -9,7 +9,7 @@ terraform {
   required_version = ">= 1.0"
 
   backend "s3" {
-    bucket         = "terraform-state-0ss4kx0a"
+    bucket         = "terraform-state-us-east-1-0ss4kx0a"
     key            = "terraform.tfstate"
     region         = "us-east-1"
     dynamodb_table = "my-terraform-project-terraform-state-lock"
@@ -37,7 +37,7 @@ data "aws_iam_role" "existing_node_role" {
 
 # S3 Bucket for Terraform State
 resource "aws_s3_bucket" "terraform_state" {
-  bucket = "terraform-state-0ss4kx0a"
+  bucket = "terraform-state-us-east-1-0ss4kx0a"
 
   tags = {
     Name        = "${var.project_name}-terraform-state"
