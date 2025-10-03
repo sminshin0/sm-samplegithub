@@ -48,7 +48,7 @@ jobs:
         cd terraform
         
         # DynamoDB 테이블 존재 확인
-        if aws dynamodb describe-table --table-name terraform-state-lock-0ss4kx0a --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+        if aws dynamodb describe-table --table-name my-terraform-project-terraform-state-lock --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
           echo "✅ DynamoDB 테이블이 이미 존재합니다"
         else
           echo "📦 DynamoDB 테이블 생성 중..."
@@ -72,7 +72,7 @@ jobs:
         
         echo "✅ S3 Backend 설정:"
         echo "   버킷: terraform-state-0ss4kx0a"
-        echo "   테이블: terraform-state-lock-0ss4kx0a"
+        echo "   테이블: my-terraform-project-terraform-state-lock"
         echo "   리전: ${{ env.AWS_REGION }}"
 
     # 5. terraform.tfvars 생성 (환경변수 + Secrets 사용)

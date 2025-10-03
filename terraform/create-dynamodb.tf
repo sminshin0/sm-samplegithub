@@ -2,7 +2,7 @@
 # 이 파일로 테이블을 생성한 후 삭제할 예정
 
 resource "aws_dynamodb_table" "terraform_state_lock" {
-  name           = "terraform-state-lock-0ss4kx0a"
+  name           = "my-terraform-project-terraform-state-lock"
   billing_mode   = "PAY_PER_REQUEST"
   hash_key       = "LockID"
 
@@ -12,7 +12,8 @@ resource "aws_dynamodb_table" "terraform_state_lock" {
   }
 
   tags = {
-    Name        = "Terraform State Lock Table"
+    Name        = "My Terraform Project State Lock"
     Environment = "infrastructure"
+    Project     = "my-terraform-project"
   }
 }

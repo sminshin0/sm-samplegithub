@@ -3,7 +3,7 @@
 ## 현재 설정
 
 ✅ **S3 버킷**: `terraform-state-0ss4kx0a`
-✅ **DynamoDB 테이블**: `terraform-state-lock-0ss4kx0a`
+✅ **DynamoDB 테이블**: `my-terraform-project-terraform-state-lock`
 ✅ **리전**: `us-east-2`
 
 ## Backend 설정 파일
@@ -16,7 +16,7 @@ terraform {
     bucket         = "terraform-state-0ss4kx0a"
     key            = "terraform.tfstate"
     region         = "us-east-2"
-    dynamodb_table = "terraform-state-lock-0ss4kx0a"
+    dynamodb_table = "my-terraform-project-terraform-state-lock"
     encrypt        = true
   }
 }
