@@ -5,13 +5,20 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.1"
+    }
   }
   required_version = ">= 1.0"
 }
 
 # AWS Provider 설정
 provider "aws" {
-  region = "us-east-2"  # 오하이오 리전
+  region = var.aws_region
+  
+  # 환경변수에서 자격 증명을 자동으로 읽음
+  # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY 환경변수 사용
 }
 
 # 기본 VPC 사용 (AWS 계정에 자동으로 있는 VPC)

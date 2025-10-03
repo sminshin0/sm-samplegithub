@@ -9,6 +9,9 @@ on:
 
 env:
   AWS_REGION: 'us-east-2'
+  PROJECT_NAME: 'github-actions-terraform'
+  INSTANCE_TYPE: 't3.micro'
+  ENVIRONMENT: 'production'
 
 jobs:
   terraform:
@@ -39,11 +42,66 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    # 4. Terraform 초기화
+    # 4. S3 Backend 설정 확인 및 생성
+    - name: Setup S3 Backend
+      run: |
+        cd terraform
+        
+        # Backend 설정이 없다면 생성
+        if [ ! -f "backend.tf" ]; then
+          echo "📦 S3 Backend 인프라 생성 중..."
+          
+          # 임시로 backend-setup.tf가 있다면 실행
+          if [ -f "backend-setup.tf" ]; then
+            terraform init
+            terraform apply -auto-approve
+            
+            # 출력값 저장
+            S3_BUCKET=$(terraform output -raw s3_bucket_name)
+            DYNAMODB_TABLE=$(terraform output -raw dynamodb_table_name)
+            
+            # Backend 설정 파일 생성
+            cat > backend.tf << EOF
+        terraform {
+          backend "s3" {
+            bucket         = "$S3_BUCKET"
+            key            = "terraform.tfstate"
+            region         = "${{ env.AWS_REGION }}"
+            dynamodb_table = "$DYNAMODB_TABLE"
+            encrypt        = true
+          }
+        }
+        EOF
+            
+            echo "✅ S3 Backend 설정 완료"
+            echo "S3 버킷: $S3_BUCKET"
+            echo "DynamoDB 테이블: $DYNAMODB_TABLE"
+            
+            # backend-setup.tf 삭제
+            rm -f backend-setup.tf
+          fi
+        else
+          echo "✅ S3 Backend 이미 설정됨"
+        fi
+
+    # 5. terraform.tfvars 자동 생성
+    - name: Create terraform.tfvars
+      run: |
+        cd terraform
+        cat > terraform.tfvars << EOF
+        aws_region    = "${{ env.AWS_REGION }}"
+        project_name  = "${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}"
+        instance_type = "${{ env.INSTANCE_TYPE }}"
+        EOF
+        echo "✅ terraform.tfvars 생성 완료"
+        echo "📋 생성된 설정:"
+        cat terraform.tfvars
+
+    # 6. Terraform 초기화 (S3 Backend 포함)
     - name: Terraform Init
       run: |
         cd terraform
-        terraform init
+        terraform init -input=false -force-copy
 
     # 5. Terraform 검증
     - name: Terraform Validate
@@ -51,24 +109,45 @@ jobs:
         cd terraform
         terraform validate
 
-    # 6. Terraform 계획 (항상 실행)
+    # 7. Terraform 계획 (항상 실행)
     - name: Terraform Plan
+      id: plan
       run: |
         cd terraform
-        terraform plan -no-color
+        echo "📋 Terraform Plan 실행 중..."
+        terraform plan -detailed-exitcode -no-color -out=tfplan
+        echo "✅ Plan 완료"
+      continue-on-error: true
 
-    # 7. Terraform 적용 (main 브랜치에 push 시에만)
+    # 8. Plan 결과 요약
+    - name: Plan Summary
+      run: |
+        cd terraform
+        if [ -f tfplan ]; then
+          echo "📊 Plan 요약:"
+          terraform show -no-color tfplan | head -20
+        fi
+
+    # 9. Terraform 적용 (main 브랜치에 push 시에만)
     - name: Terraform Apply
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.plan.outcome == 'success'
       run: |
         cd terraform
-        terraform apply -auto-approve -no-color
+        echo "🚀 인프라 배포 시작..."
+        terraform apply -auto-approve -no-color tfplan
+        echo "✅ 배포 완료!"
 
-    # 8. 결과 출력
-    - name: Show outputs
+    # 10. 배포 결과 출력
+    - name: Show Deployment Results
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
         cd terraform
-        echo "🎉 배포 완료!"
-        echo "웹사이트 URL: $(terraform output -raw website_url)"
-        echo "인스턴스 ID: $(terraform output -raw instance_id)"
+        echo "🎉 배포 결과:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        terraform output
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "🌐 웹사이트: $(terraform output -raw website_url)"
+        echo "🖥️  인스턴스: $(terraform output -raw instance_id)"
+        echo "📍 리전: ${{ env.AWS_REGION }}"
+        echo "🏷️  환경: ${{ env.ENVIRONMENT }}"
+        echo "💾 State: S3 Backend 사용 중"
