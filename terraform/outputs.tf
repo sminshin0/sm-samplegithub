@@ -18,3 +18,23 @@ output "website_url" {
   description = "웹사이트 URL"
   value       = "http://${aws_instance.web.public_ip}"
 }
+
+output "ecr_repository_url" {
+  description = "ECR Repository URL"
+  value       = aws_ecr_repository.app_repo.repository_url
+}
+
+output "eks_cluster_name" {
+  description = "EKS Cluster Name"
+  value       = aws_eks_cluster.main.name
+}
+
+output "eks_cluster_endpoint" {
+  description = "EKS Cluster Endpoint"
+  value       = aws_eks_cluster.main.endpoint
+}
+
+output "eks_cluster_arn" {
+  description = "EKS Cluster ARN"
+  value       = aws_eks_cluster.main.arn
+}

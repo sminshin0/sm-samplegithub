@@ -17,3 +17,9 @@ variable "instance_type" {
   type        = string
   default     = "t3.micro"
 }
+
+variable "environment" {
+  description = "Environment name"
+  type        = string
+  default     = "production"
+}

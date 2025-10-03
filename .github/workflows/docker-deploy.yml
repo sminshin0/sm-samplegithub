@@ -1,0 +1,112 @@
+name: 'Docker Build & EKS Deploy'
+
+on:
+  push:
+    branches: [ main ]
+    paths: 
+      - '*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - 'k8s/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: 'us-east-2'
+  PROJECT_NAME: 'github-actions-terraform'
+
+jobs:
+  build-and-deploy:
+    name: 'Build Docker & Deploy to EKS'
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Get ECR Repository URI
+      id: ecr
+      run: |
+        ECR_URI=$(aws ecr describe-repositories --repository-names ${{ env.PROJECT_NAME }}-app --query 'repositories[0].repositoryUri' --output text)
+        echo "ecr_uri=$ECR_URI" >> $GITHUB_OUTPUT
+        echo "✅ ECR URI: $ECR_URI"
+
+    - name: Login to Amazon ECR
+      run: |
+        aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.ecr_uri }}
+
+    - name: Build Docker image
+      run: |
+        IMAGE_TAG=v${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)
+        echo "Building image with tag: $IMAGE_TAG"
+        docker build -t ${{ steps.ecr.outputs.ecr_uri }}:$IMAGE_TAG .
+        docker tag ${{ steps.ecr.outputs.ecr_uri }}:$IMAGE_TAG ${{ steps.ecr.outputs.ecr_uri }}:latest
+        echo "image_tag=$IMAGE_TAG" >> $GITHUB_ENV
+
+    - name: Push Docker image to ECR
+      run: |
+        echo "🚀 Pushing images to ECR..."
+        docker push ${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}
+        docker push ${{ steps.ecr.outputs.ecr_uri }}:latest
+        echo "✅ Images pushed successfully"
+
+    - name: Update EKS kubeconfig
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.PROJECT_NAME }}-eks
+
+    - name: Update Kubernetes deployment
+      run: |
+        # Replace placeholder with actual ECR URI
+        sed -i "s|PLACEHOLDER_ECR_URI|${{ steps.ecr.outputs.ecr_uri }}|g" k8s/deployment.yaml
+        
+        # Update image tag to latest
+        kubectl set image deployment/hello-world-app hello-world=${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }} || true
+        
+        # Apply the deployment
+        kubectl apply -f k8s/deployment.yaml
+        
+        echo "✅ Kubernetes deployment updated"
+
+    - name: Wait for deployment rollout
+      run: |
+        kubectl rollout status deployment/hello-world-app --timeout=300s
+        echo "✅ Deployment rollout completed"
+
+    - name: Get service endpoint
+      run: |
+        echo "🌐 Getting service endpoint..."
+        kubectl get services hello-world-service
+        
+        # Wait for LoadBalancer to get external IP
+        echo "⏳ Waiting for LoadBalancer external IP..."
+        for i in {1..30}; do
+          EXTERNAL_IP=$(kubectl get service hello-world-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+          if [ ! -z "$EXTERNAL_IP" ]; then
+            echo "✅ Service available at: http://$EXTERNAL_IP"
+            break
+          fi
+          echo "Waiting... ($i/30)"
+          sleep 10
+        done
+
+    - name: Deployment Summary
+      run: |
+        echo "🎉 Deployment Summary:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📦 Image: ${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}"
+        echo "🏷️  Tag: ${{ env.image_tag }}"
+        echo "🔧 Cluster: ${{ env.PROJECT_NAME }}-eks"
+        echo "📍 Region: ${{ env.AWS_REGION }}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        kubectl get pods -l app=hello-world

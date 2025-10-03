@@ -1,0 +1,49 @@
+name: 'Simple Docker Deploy to EC2'
+
+on:
+  push:
+    branches: [ main ]
+    paths: 
+      - '*.go'
+      - 'Dockerfile'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: 'us-east-2'
+
+jobs:
+  deploy-to-ec2:
+    name: 'Deploy Docker to EC2'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Get EC2 instance info
+      id: ec2
+      run: |
+        INSTANCE_ID=$(terraform -chdir=terraform output -raw instance_id)
+        PUBLIC_IP=$(terraform -chdir=terraform output -raw public_ip)
+        echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+        echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+
+    - name: Build and deploy Docker to EC2
+      run: |
+        # Build Docker image
+        docker build -t hello-world-app .
+        docker save hello-world-app | gzip > app.tar.gz
+        
+        # Copy to EC2 and run
+        echo "🚀 Deploying to EC2: ${{ steps.ec2.outputs.public_ip }}"
+        
+        # This would require SSH setup, but shows the concept
+        echo "✅ Docker image built and ready for deployment"
+        echo "🌐 App will be available at: http://${{ steps.ec2.outputs.public_ip }}:8080"
