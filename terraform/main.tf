@@ -8,13 +8,14 @@ terraform {
   }
   required_version = ">= 1.0"
 
-  backend "s3" {
-    bucket         = "terraform-state-us-east-1-0ss4kx0a"
-    key            = "terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "my-terraform-project-terraform-state-lock"
-    encrypt        = true
-  }
+  # Backend 설정은 S3 버킷 생성 후 추가 예정
+  # backend "s3" {
+  #   bucket         = "terraform-state-us-east-1-0ss4kx0a"
+  #   key            = "terraform.tfstate"
+  #   region         = "us-east-1"
+  #   dynamodb_table = "my-terraform-project-terraform-state-lock"
+  #   encrypt        = true
+  # }
 }
 
 provider "aws" {

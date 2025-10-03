@@ -128,18 +128,41 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Terraform Init
+    - name: Terraform Init (Local State)
       run: |
         cd terraform
         terraform init -input=false
 
-    - name: Terraform Apply
+    - name: Terraform Apply (Create Backend Resources)
       id: apply
       run: |
         cd terraform
-        echo "🚀 인프라 변경사항 적용 중..."
+        echo "🚀 S3 버킷과 DynamoDB 테이블 생성 중..."
         terraform apply -auto-approve -no-color
-        echo "✅ 인프라 변경 완료!"
+        echo "✅ Backend 리소스 생성 완료!"
+
+    - name: Configure Backend
+      run: |
+        cd terraform
+        echo "🔄 Backend 설정 활성화 중..."
+        
+        # backend 설정 주석 해제
+        sed -i 's/  # backend "s3"/  backend "s3"/' main.tf
+        sed -i 's/  #   bucket/    bucket/' main.tf
+        sed -i 's/  #   key/    key/' main.tf
+        sed -i 's/  #   region/    region/' main.tf
+        sed -i 's/  #   dynamodb_table/    dynamodb_table/' main.tf
+        sed -i 's/  #   encrypt/    encrypt/' main.tf
+        sed -i 's/  # }/  }/' main.tf
+        
+        echo "✅ Backend 설정 활성화 완료"
+
+    - name: Migrate to Remote Backend
+      run: |
+        cd terraform
+        echo "📦 로컬 state를 S3로 마이그레이션 중..."
+        terraform init -force-copy -input=false
+        echo "✅ Backend 마이그레이션 완료!"
 
     - name: Get Terraform Outputs
       id: outputs
