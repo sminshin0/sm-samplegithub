@@ -84,18 +84,22 @@ jobs:
           echo "✅ S3 Backend 이미 설정됨"
         fi
 
-    # 5. terraform.tfvars 자동 생성
+    # 5. terraform.tfvars 생성 (환경변수 + Secrets 사용)
     - name: Create terraform.tfvars
       run: |
         cd terraform
         cat > terraform.tfvars << EOF
         aws_region    = "${{ env.AWS_REGION }}"
         project_name  = "${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}"
-        instance_type = "${{ env.INSTANCE_TYPE }}"
+        instance_type = "${{ secrets.INSTANCE_TYPE || env.INSTANCE_TYPE }}"
         EOF
         echo "✅ terraform.tfvars 생성 완료"
         echo "📋 생성된 설정:"
         cat terraform.tfvars
+        echo ""
+        echo "💡 설정 변경 방법:"
+        echo "   - GitHub Secrets에서 INSTANCE_TYPE 설정 가능"
+        echo "   - 워크플로우 env 섹션에서 기본값 변경 가능"
 
     # 6. Terraform 초기화 (S3 Backend 포함)
     - name: Terraform Init
