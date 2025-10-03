@@ -1,0 +1,211 @@
+name: 'Terraform Infrastructure'
+
+# terraform 폴더 변경 시에만 실행
+on:
+  push:
+    branches: [ main ]
+    paths: 
+      - 'terraform/**'
+  pull_request:
+    branches: [ main ]
+    paths: 
+      - 'terraform/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: 'us-east-1'
+  TF_VERSION: '1.5.7'
+
+jobs:
+  terraform-plan:
+    name: 'Terraform Plan'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init -input=false
+
+    - name: Terraform Validate
+      run: |
+        cd terraform
+        terraform validate
+
+    - name: Terraform Format Check
+      run: |
+        cd terraform
+        terraform fmt -check -recursive
+
+    - name: Terraform Plan
+      id: plan
+      run: |
+        cd terraform
+        terraform plan -no-color -out=tfplan
+        
+        # Plan 결과를 파일로 저장
+        terraform show -no-color tfplan > plan_output.txt
+      continue-on-error: true
+
+    - name: Comment PR with Plan
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const planOutput = fs.readFileSync('terraform/plan_output.txt', 'utf8');
+          
+          const output = `#### 🏗️ Terraform Plan Results
+          
+          <details><summary>📋 Show Plan Details</summary>
+          
+          \`\`\`terraform
+          ${planOutput.length > 10000 ? planOutput.substring(0, 10000) + '\n... (truncated)' : planOutput}
+          \`\`\`
+          
+          </details>
+          
+          **Plan Status**: \`${{ steps.plan.outcome }}\`
+          **Pusher**: @${{ github.actor }}
+          **Action**: \`${{ github.event_name }}\`
+          
+          > 💡 이 계획을 적용하려면 PR을 main 브랜치에 머지하세요.`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          });
+
+  terraform-apply:
+    name: 'Terraform Apply'
+    runs-on: ubuntu-latest
+    needs: terraform-plan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    permissions:
+      contents: read
+      id-token: write
+    
+    environment:
+      name: production
+      url: ${{ steps.outputs.outputs.ecr_url }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init -input=false
+
+    - name: Terraform Apply
+      id: apply
+      run: |
+        cd terraform
+        echo "🚀 인프라 변경사항 적용 중..."
+        terraform apply -auto-approve -no-color
+        echo "✅ 인프라 변경 완료!"
+
+    - name: Get Terraform Outputs
+      id: outputs
+      run: |
+        cd terraform
+        ECR_URL=$(terraform output -raw ecr_repository_url 2>/dev/null || echo "")
+        echo "ecr_url=$ECR_URL" >> $GITHUB_OUTPUT
+        
+        echo "📋 Terraform 출력값:"
+        terraform output
+
+    - name: Deployment Summary
+      run: |
+        cd terraform
+        echo ""
+        echo "🎉 인프라 배포 완료!"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📦 ECR Repository: ${{ steps.outputs.outputs.ecr_url }}"
+        echo "🌍 Region: ${{ env.AWS_REGION }}"
+        echo "🏷️  Environment: production"
+        echo "⏰ 배포 시간: $(date)"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "🔗 다음 단계:"
+        echo "   - 애플리케이션 코드 변경 시 Docker 이미지가 자동으로 빌드됩니다"
+        echo "   - ECR에 푸시된 이미지는 Kubernetes에 자동 배포됩니다"
+
+  terraform-plan-only:
+    name: 'Terraform Plan (Manual)'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init -input=false
+
+    - name: Terraform Plan
+      run: |
+        cd terraform
+        echo "📋 현재 인프라 상태 확인 중..."
+        terraform plan -no-color
+        
+        echo ""
+        echo "💡 변경사항을 적용하려면:"
+        echo "   1. terraform 폴더의 파일을 수정"
+        echo "   2. main 브랜치에 푸시"
+        echo "   3. 자동으로 terraform apply 실행됨"

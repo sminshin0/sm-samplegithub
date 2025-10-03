@@ -1,0 +1,185 @@
+name: 'Application Deploy'
+
+# 애플리케이션 코드 변경 시에만 실행 (terraform 폴더 제외)
+on:
+  push:
+    branches: [ main ]
+    paths: 
+      - '*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - 'k8s/**'
+    paths-ignore:
+      - 'terraform/**'  # terraform 폴더는 제외
+  pull_request:
+    branches: [ main ]
+    paths: 
+      - '*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - 'k8s/**'
+    paths-ignore:
+      - 'terraform/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: 'us-east-2'
+  PROJECT_NAME: 'github-actions-terraform'
+
+jobs:
+  build-and-deploy:
+    name: 'Build & Deploy Application'
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Get ECR Repository URI
+      id: ecr
+      run: |
+        ECR_URI=$(aws ecr describe-repositories --repository-names ${{ env.PROJECT_NAME }}-app --query 'repositories[0].repositoryUri' --output text --region ${{ env.AWS_REGION }})
+        echo "ecr_uri=$ECR_URI" >> $GITHUB_OUTPUT
+        echo "✅ ECR URI: $ECR_URI"
+
+    - name: Login to Amazon ECR
+      run: |
+        aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.ecr_uri }}
+
+    - name: Build Docker image
+      run: |
+        IMAGE_TAG=v${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)
+        echo "🐳 Docker 이미지 빌드 중..."
+        echo "태그: $IMAGE_TAG"
+        
+        docker build -t ${{ steps.ecr.outputs.ecr_uri }}:$IMAGE_TAG .
+        docker tag ${{ steps.ecr.outputs.ecr_uri }}:$IMAGE_TAG ${{ steps.ecr.outputs.ecr_uri }}:latest
+        
+        echo "image_tag=$IMAGE_TAG" >> $GITHUB_ENV
+        echo "✅ Docker 이미지 빌드 완료"
+
+    - name: Push Docker image to ECR
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "📦 ECR에 이미지 푸시 중..."
+        docker push ${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}
+        docker push ${{ steps.ecr.outputs.ecr_uri }}:latest
+        echo "✅ ECR 푸시 완료"
+
+    - name: Check EKS Cluster
+      id: eks_check
+      run: |
+        if aws eks describe-cluster --name sm-eks --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+          echo "✅ EKS 클러스터 발견"
+          echo "eks_exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "ℹ️  EKS 클러스터가 없습니다"
+          echo "eks_exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Deploy to EKS
+      if: steps.eks_check.outputs.eks_exists == 'true' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "🚀 EKS에 애플리케이션 배포 중..."
+        
+        # EKS 연결
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name sm-eks
+        
+        # 환경 선택 (기본: prod)
+        ENVIRONMENT="prod"
+        
+        # Kustomize로 배포
+        cd k8s/overlays/$ENVIRONMENT
+        
+        # ECR URI와 이미지 태그 업데이트
+        kustomize edit set image PLACEHOLDER_ECR_URI=${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}
+        
+        # 배포 실행
+        echo "📋 배포 매니페스트:"
+        kustomize build .
+        
+        echo "🚀 배포 적용 중..."
+        kustomize build . | kubectl apply -f -
+        
+        # 배포 상태 확인
+        kubectl rollout status deployment/hello-world-app --timeout=300s
+        
+        echo "✅ EKS 배포 완료"
+
+    - name: Get Service Status
+      if: steps.eks_check.outputs.eks_exists == 'true' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        echo "🌐 서비스 상태 확인 중..."
+        
+        # 서비스 정보 출력
+        kubectl get services hello-world-service || echo "서비스를 찾을 수 없습니다"
+        
+        # Pod 상태 확인
+        kubectl get pods -l app=hello-world
+        
+        # LoadBalancer 외부 IP 확인 (최대 5분 대기)
+        echo "⏳ LoadBalancer 외부 IP 할당 대기 중..."
+        for i in {1..10}; do
+          EXTERNAL_IP=$(kubectl get service hello-world-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+          if [ ! -z "$EXTERNAL_IP" ]; then
+            echo "✅ 서비스 URL: http://$EXTERNAL_IP"
+            break
+          fi
+          echo "대기 중... ($i/10)"
+          sleep 30
+        done
+
+    - name: Deployment Summary
+      run: |
+        echo ""
+        echo "🎉 애플리케이션 배포 요약"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📦 이미지: ${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}"
+        echo "🏷️  태그: ${{ env.image_tag }}"
+        echo "🌍 리전: ${{ env.AWS_REGION }}"
+        echo "🎯 환경: production"
+        
+        if [ "${{ steps.eks_check.outputs.eks_exists }}" = "true" ]; then
+          echo "🚀 배포 대상: EKS 클러스터"
+        else
+          echo "📦 빌드만 완료: EKS 클러스터 없음"
+        fi
+        
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    - name: PR Comment for App Changes
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const output = `#### 🚀 Application Build Results
+          
+          **Docker Image**: Built successfully ✅
+          **ECR Push**: ${github.ref === 'refs/heads/main' ? 'Will push on merge' : 'Skipped (PR only)'} 
+          **EKS Deploy**: ${{ steps.eks_check.outputs.eks_exists == 'true' ? 'Ready' : 'EKS cluster not found' }}
+          
+          **Image Tag**: \`${{ env.image_tag }}\`
+          **ECR Repository**: \`${{ steps.ecr.outputs.ecr_uri }}\`
+          
+          > 💡 이 PR을 머지하면 자동으로 ECR에 푸시되고 EKS에 배포됩니다.`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          });
