@@ -108,4 +108,65 @@ resource "aws_ecr_repository" "app_repo" {
     Name        = "${var.project_name}-ecr"
     Environment = var.environment
     ManagedBy   = "terraform"
-  
+    Purpose     = "container-registry"
+  }
+}
+
+# ECR Repository Policy (선택적 - 필요시 주석 해제)
+# resource "aws_ecr_repository_policy" "app_repo_policy" {
+#   repository = aws_ecr_repository.app_repo.name
+#   
+#   policy = jsonencode({
+#     Version = "2012-10-17"
+#     Statement = [
+#       {
+#         Sid    = "AllowPull"
+#         Effect = "Allow"
+#         Principal = {
+#           AWS = data.aws_iam_role.existing_node_role.arn
+#         }
+#         Action = [
+#           "ecr:GetDownloadUrlForLayer",
+#           "ecr:BatchGetImage",
+#           "ecr:BatchCheckLayerAvailability"
+#         ]
+#       }
+#     ]
+#   })
+# }
+
+# ECR Lifecycle Policy (이미지 정리)
+resource "aws_ecr_lifecycle_policy" "app_repo_lifecycle" {
+  repository = aws_ecr_repository.app_repo.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep last 10 images"
+        selection = {
+          tagStatus     = "tagged"
+          tagPrefixList = ["v"]
+          countType     = "imageCountMoreThan"
+          countNumber   = 10
+        }
+        action = {
+          type = "expire"
+        }
+      },
+      {
+        rulePriority = 2
+        description  = "Delete untagged images older than 1 day"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = 1
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
+}
