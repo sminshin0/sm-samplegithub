@@ -42,13 +42,19 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    # 4. DynamoDB 테이블 Import (필요시)
+    # 4. Terraform 초기화 (S3 Backend 포함)
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init -input=false -reconfigure
+
+    # 5. DynamoDB 테이블 Import (필요시)
     - name: Import DynamoDB Table if needed
       run: |
         cd terraform
         
         # DynamoDB 테이블이 Terraform State에 있는지 확인
-        if terraform state list | grep -q "aws_dynamodb_table.existing_lock_table"; then
+        if terraform state list 2>/dev/null | grep -q "aws_dynamodb_table.existing_lock_table"; then
           echo "✅ DynamoDB 테이블이 이미 Terraform State에 있습니다"
         else
           # 테이블이 AWS에 존재하는지 확인
@@ -73,7 +79,7 @@ jobs:
         echo "   테이블: my-terraform-project-terraform-state-lock"
         echo "   리전: ${{ env.AWS_REGION }}"
 
-    # 5. terraform.tfvars 생성 (환경변수 + Secrets 사용)
+    # 6. terraform.tfvars 생성 (환경변수 + Secrets 사용)
     - name: Create terraform.tfvars
       run: |
         cd terraform
@@ -90,19 +96,13 @@ jobs:
         echo "   - GitHub Secrets에서 INSTANCE_TYPE 설정 가능"
         echo "   - 워크플로우 env 섹션에서 기본값 변경 가능"
 
-    # 6. Terraform 초기화 (S3 Backend 포함)
-    - name: Terraform Init
-      run: |
-        cd terraform
-        terraform init -input=false -force-copy
-
-    # 5. Terraform 검증
+    # 7. Terraform 검증
     - name: Terraform Validate
       run: |
         cd terraform
         terraform validate
 
-    # 7. Terraform 계획 (항상 실행)
+    # 8. Terraform 계획 (항상 실행)
     - name: Terraform Plan
       id: plan
       run: |
@@ -112,7 +112,7 @@ jobs:
         echo "✅ Plan 완료"
       continue-on-error: true
 
-    # 8. Plan 결과 요약
+    # 9. Plan 결과 요약
     - name: Plan Summary
       run: |
         cd terraform
@@ -121,7 +121,7 @@ jobs:
           terraform show -no-color tfplan | head -20
         fi
 
-    # 9. Terraform 적용 (main 브랜치에 push 시에만)
+    # 10. Terraform 적용 (main 브랜치에 push 시에만)
     - name: Terraform Apply
       if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.plan.outcome == 'success'
       run: |
@@ -130,7 +130,7 @@ jobs:
         terraform apply -auto-approve -no-color tfplan
         echo "✅ 배포 완료!"
 
-    # 10. 배포 결과 출력
+    # 11. 배포 결과 출력
     - name: Show Deployment Results
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
