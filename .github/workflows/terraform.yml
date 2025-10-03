@@ -1,0 +1,74 @@
+name: 'Terraform Deploy'
+
+# 언제 실행할지 설정
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'terraform/**' ]  # terraform 폴더 변경 시에만
+  workflow_dispatch:  # 수동 실행 가능
+
+env:
+  AWS_REGION: 'us-east-2'
+
+jobs:
+  terraform:
+    name: 'Terraform'
+    runs-on: ubuntu-latest
+    
+    # 필요한 권한 설정
+    permissions:
+      contents: read
+      id-token: write  # AWS 역할 사용 시 필요
+    
+    steps:
+    # 1. 코드 체크아웃
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # 2. Terraform 설치
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: '1.5.7'
+
+    # 3. AWS 자격 증명 설정
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    # 4. Terraform 초기화
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init
+
+    # 5. Terraform 검증
+    - name: Terraform Validate
+      run: |
+        cd terraform
+        terraform validate
+
+    # 6. Terraform 계획 (항상 실행)
+    - name: Terraform Plan
+      run: |
+        cd terraform
+        terraform plan -no-color
+
+    # 7. Terraform 적용 (main 브랜치에 push 시에만)
+    - name: Terraform Apply
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        cd terraform
+        terraform apply -auto-approve -no-color
+
+    # 8. 결과 출력
+    - name: Show outputs
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        cd terraform
+        echo "🎉 배포 완료!"
+        echo "웹사이트 URL: $(terraform output -raw website_url)"
+        echo "인스턴스 ID: $(terraform output -raw instance_id)"
