@@ -8,9 +8,11 @@ import (
 )
 
 func helloHandler(w http.ResponseWriter, r *http.Request) {
-    fmt.Fprintf(w, "Hello, World! 🌍\n")
+    fmt.Fprintf(w, "Hello from Docker! 🐳\n")
+    fmt.Fprintf(w, "Version: v1.0.0\n")
     fmt.Fprintf(w, "Current time: %s\n", time.Now().Format("2006-01-02 15:04:05"))
     fmt.Fprintf(w, "Request from: %s\n", r.RemoteAddr)
+    fmt.Fprintf(w, "Deployed via GitHub Actions! 🚀\n")
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {

@@ -38,15 +38,38 @@ jobs:
     - name: Get or Create ECR Repository
       id: ecr
       run: |
+        REPO_NAME="${{ env.PROJECT_NAME }}-app"
+        
+        echo "🔍 ECR 리포지토리 확인 중: $REPO_NAME"
+        
         # ECR 리포지토리 존재 확인
-        if aws ecr describe-repositories --repository-names ${{ env.PROJECT_NAME }}-app --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+        if aws ecr describe-repositories --repository-names $REPO_NAME --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
           echo "✅ ECR 리포지토리가 존재합니다"
-          ECR_URI=$(aws ecr describe-repositories --repository-names ${{ env.PROJECT_NAME }}-app --query 'repositories[0].repositoryUri' --output text)
         else
           echo "📦 ECR 리포지토리를 생성합니다..."
-          aws ecr create-repository --repository-name ${{ env.PROJECT_NAME }}-app --region ${{ env.AWS_REGION }}
-          ECR_URI=$(aws ecr describe-repositories --repository-names ${{ env.PROJECT_NAME }}-app --query 'repositories[0].repositoryUri' --output text)
-          echo "✅ ECR 리포지토리 생성 완료"
+          
+          # ECR 리포지토리 생성
+          aws ecr create-repository \
+            --repository-name $REPO_NAME \
+            --image-scanning-configuration scanOnPush=true \
+            --region ${{ env.AWS_REGION }}
+          
+          # 생성 확인
+          sleep 5
+          if aws ecr describe-repositories --repository-names $REPO_NAME --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "✅ ECR 리포지토리 생성 완료"
+          else
+            echo "❌ ECR 리포지토리 생성 실패"
+            exit 1
+          fi
+        fi
+        
+        # ECR URI 가져오기
+        ECR_URI=$(aws ecr describe-repositories --repository-names $REPO_NAME --query 'repositories[0].repositoryUri' --output text --region ${{ env.AWS_REGION }})
+        
+        if [ -z "$ECR_URI" ] || [ "$ECR_URI" = "None" ]; then
+          echo "❌ ECR URI를 가져올 수 없습니다"
+          exit 1
         fi
         
         echo "ecr_uri=$ECR_URI" >> $GITHUB_OUTPUT
