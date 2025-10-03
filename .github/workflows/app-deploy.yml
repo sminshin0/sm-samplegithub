@@ -166,11 +166,14 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
+          const eksStatus = '${{ steps.eks_check.outputs.eks_exists }}' === 'true' ? 'Ready' : 'EKS cluster not found';
+          const ecrPushStatus = context.ref === 'refs/heads/main' ? 'Will push on merge' : 'Skipped (PR only)';
+          
           const output = `#### 🚀 Application Build Results
           
           **Docker Image**: Built successfully ✅
-          **ECR Push**: ${github.ref === 'refs/heads/main' ? 'Will push on merge' : 'Skipped (PR only)'} 
-          **EKS Deploy**: ${{ steps.eks_check.outputs.eks_exists == 'true' ? 'Ready' : 'EKS cluster not found' }}
+          **ECR Push**: ${ecrPushStatus}
+          **EKS Deploy**: ${eksStatus}
           
           **Image Tag**: \`${{ env.image_tag }}\`
           **ECR Repository**: \`${{ steps.ecr.outputs.ecr_uri }}\`
