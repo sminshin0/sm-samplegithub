@@ -50,10 +50,11 @@ jobs:
         cd terraform
         cat > terraform.tfvars << EOF
         aws_region    = "${{ env.AWS_REGION }}"
-        project_name  = "${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-pr${{ github.event.number }}"
+        project_name  = "${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-pr${{ github.event.number || 'manual' }}"
         instance_type = "${{ env.INSTANCE_TYPE }}"
         EOF
         echo "🧪 개발 환경 설정 생성 완료"
+        echo "📋 고정 S3 Backend: terraform-state-0ss4kx0a"
         cat terraform.tfvars
 
     - name: Terraform Init

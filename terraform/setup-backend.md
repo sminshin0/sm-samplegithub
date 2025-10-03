@@ -1,51 +1,39 @@
-# Backend 설정 가이드
+# S3 Backend 설정 완료
 
-## 1단계: Backend 인프라 생성
+## 현재 설정
 
-```bash
-cd terraform
-terraform init
-terraform apply
-```
+✅ **S3 버킷**: `terraform-state-0ss4kx0a`
+✅ **DynamoDB 테이블**: `terraform-state-lock-0ss4kx0a`
+✅ **리전**: `us-east-2`
 
-출력된 S3 버킷 이름과 DynamoDB 테이블 이름을 기록해두세요.
+## Backend 설정 파일
 
-## 2단계: main.tf에 backend 설정 추가
-
-출력된 정보로 main.tf의 terraform 블록을 다음과 같이 수정:
+`backend.tf` 파일이 이미 생성되어 있습니다:
 
 ```hcl
 terraform {
   backend "s3" {
-    bucket         = "terraform-state-xxxxxxxx"  # 출력된 버킷 이름
+    bucket         = "terraform-state-0ss4kx0a"
     key            = "terraform.tfstate"
     region         = "us-east-2"
-    dynamodb_table = "terraform-state-lock-xxxxxxxx"  # 출력된 테이블 이름
+    dynamodb_table = "terraform-state-lock-0ss4kx0a"
     encrypt        = true
   }
-  
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.1"
-    }
-  }
-  required_version = ">= 1.0"
 }
 ```
 
-## 3단계: backend-setup.tf 파일 삭제
-
-Backend 설정 완료 후 `backend-setup.tf` 파일을 삭제하세요.
-
-## 4단계: State 마이그레이션
+## 사용 방법
 
 ```bash
-terraform init  # backend 설정 적용
+cd terraform
+terraform init    # S3 backend 초기화
+terraform plan    # 변경사항 확인
+terraform apply   # 인프라 배포
 ```
 
-"Do you want to copy existing state to the new backend?" → **yes** 입력
+## 특징
+
+- **고정 버킷**: 매번 같은 S3 버킷 사용
+- **State 공유**: 팀원들과 동일한 State 파일 공유
+- **버전 관리**: S3 버전 관리로 State 히스토리 보존
+- **동시 실행 방지**: DynamoDB Lock으로 충돌 방지

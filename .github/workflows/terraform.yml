@@ -42,47 +42,14 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    # 4. S3 Backend 설정 확인 및 생성
-    - name: Setup S3 Backend
+    # 4. S3 Backend 확인
+    - name: Verify S3 Backend
       run: |
         cd terraform
-        
-        # Backend 설정이 없다면 생성
-        if [ ! -f "backend.tf" ]; then
-          echo "📦 S3 Backend 인프라 생성 중..."
-          
-          # 임시로 backend-setup.tf가 있다면 실행
-          if [ -f "backend-setup.tf" ]; then
-            terraform init
-            terraform apply -auto-approve
-            
-            # 출력값 저장
-            S3_BUCKET=$(terraform output -raw s3_bucket_name)
-            DYNAMODB_TABLE=$(terraform output -raw dynamodb_table_name)
-            
-            # Backend 설정 파일 생성
-            cat > backend.tf << EOF
-        terraform {
-          backend "s3" {
-            bucket         = "$S3_BUCKET"
-            key            = "terraform.tfstate"
-            region         = "${{ env.AWS_REGION }}"
-            dynamodb_table = "$DYNAMODB_TABLE"
-            encrypt        = true
-          }
-        }
-        EOF
-            
-            echo "✅ S3 Backend 설정 완료"
-            echo "S3 버킷: $S3_BUCKET"
-            echo "DynamoDB 테이블: $DYNAMODB_TABLE"
-            
-            # backend-setup.tf 삭제
-            rm -f backend-setup.tf
-          fi
-        else
-          echo "✅ S3 Backend 이미 설정됨"
-        fi
+        echo "✅ 고정 S3 Backend 사용 중:"
+        echo "   버킷: terraform-state-0ss4kx0a"
+        echo "   테이블: terraform-state-lock-0ss4kx0a"
+        echo "   리전: ${{ env.AWS_REGION }}"
 
     # 5. terraform.tfvars 생성 (환경변수 + Secrets 사용)
     - name: Create terraform.tfvars
