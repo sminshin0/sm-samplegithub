@@ -1,0 +1,186 @@
+name: 'Go Application Build & Deploy'
+
+# app 폴더 변경 시에만 실행
+on:
+  push:
+    branches: [ main ]
+    paths: 
+      - 'app/**'
+  pull_request:
+    branches: [ main ]
+    paths: 
+      - 'app/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: 'us-east-1'
+  ECR_REPOSITORY: 'github-actions-terraform-app'
+  GO_VERSION: '1.21'
+
+jobs:
+  test:
+    name: 'Test Go Application'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('app/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Run tests
+      run: |
+        cd app
+        echo "🧪 Go 애플리케이션 테스트 중..."
+        go mod tidy
+        go vet ./...
+        go test -v ./...
+        echo "✅ 테스트 완료!"
+
+    - name: Build application
+      run: |
+        cd app
+        echo "🔨 Go 애플리케이션 빌드 중..."
+        go build -v -o main .
+        echo "✅ 빌드 완료!"
+
+  build-and-push:
+    name: 'Build Docker & Push to ECR'
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Get ECR Repository URI
+      id: ecr
+      run: |
+        ECR_URI=$(aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} --query 'repositories[0].repositoryUri' --output text --region ${{ env.AWS_REGION }})
+        echo "ecr_uri=$ECR_URI" >> $GITHUB_OUTPUT
+        echo "✅ ECR URI: $ECR_URI"
+
+    - name: Build Docker image
+      run: |
+        cd app
+        IMAGE_TAG=v${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)
+        echo "🐳 Docker 이미지 빌드 중..."
+        echo "태그: $IMAGE_TAG"
+        
+        docker build -t ${{ steps.ecr.outputs.ecr_uri }}:$IMAGE_TAG .
+        docker tag ${{ steps.ecr.outputs.ecr_uri }}:$IMAGE_TAG ${{ steps.ecr.outputs.ecr_uri }}:latest
+        
+        echo "image_tag=$IMAGE_TAG" >> $GITHUB_ENV
+        echo "✅ Docker 이미지 빌드 완료"
+
+    - name: Test Docker image
+      run: |
+        echo "🧪 Docker 이미지 테스트 중..."
+        
+        # 컨테이너 실행
+        docker run -d --name test-app -p 8080:8080 ${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}
+        
+        # 헬스체크 대기
+        sleep 10
+        
+        # 헬스체크 테스트
+        curl -f http://localhost:8080/health || exit 1
+        curl -f http://localhost:8080/ || exit 1
+        
+        # 컨테이너 정리
+        docker stop test-app
+        docker rm test-app
+        
+        echo "✅ Docker 이미지 테스트 완료"
+
+    - name: Push to ECR
+      run: |
+        echo "📦 ECR에 이미지 푸시 중..."
+        docker push ${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}
+        docker push ${{ steps.ecr.outputs.ecr_uri }}:latest
+        echo "✅ ECR 푸시 완료"
+
+    - name: Image scan results
+      run: |
+        echo "🔍 이미지 스캔 결과 확인 중..."
+        aws ecr describe-image-scan-findings \
+          --repository-name ${{ env.ECR_REPOSITORY }} \
+          --image-id imageTag=${{ env.image_tag }} \
+          --region ${{ env.AWS_REGION }} || echo "스캔 진행 중..."
+
+    - name: Deployment Summary
+      run: |
+        echo ""
+        echo "🎉 Go 애플리케이션 배포 완료!"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📦 이미지: ${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}"
+        echo "🏷️  태그: ${{ env.image_tag }}"
+        echo "🌍 리전: ${{ env.AWS_REGION }}"
+        echo "🔗 ECR URI: ${{ steps.ecr.outputs.ecr_uri }}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "🚀 다음 단계:"
+        echo "   - docker run -p 8080:8080 ${{ steps.ecr.outputs.ecr_uri }}:latest"
+        echo "   - 브라우저에서 http://localhost:8080 접속"
+
+  pr-comment:
+    name: 'PR Comment'
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'pull_request'
+    
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+    - name: Comment PR
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const output = `#### 🚀 Go Application Build Results
+          
+          **✅ Tests**: Passed
+          **✅ Build**: Successful
+          **📦 ECR Push**: Will push on merge to main
+          
+          **Changes in**: \`app/\` directory
+          **Go Version**: ${{ env.GO_VERSION }}
+          
+          > 💡 이 PR을 머지하면 자동으로 ECR에 Docker 이미지가 푸시됩니다.`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          });

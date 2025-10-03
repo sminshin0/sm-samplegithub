@@ -5,21 +5,13 @@ on:
   push:
     branches: [ main ]
     paths: 
-      - '*.go'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Dockerfile'
+      - 'app/**'
       - 'k8s/**'
-      - '.github/workflows/app-deploy.yml'
   pull_request:
     branches: [ main ]
     paths: 
-      - '*.go'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Dockerfile'
+      - 'app/**'
       - 'k8s/**'
-      - '.github/workflows/app-deploy.yml'
   workflow_dispatch:
 
 env:
@@ -97,24 +89,19 @@ jobs:
         # EKS 연결
         aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name sm-eks
         
-        # 환경 선택 (기본: prod)
-        ENVIRONMENT="prod"
-        
-        # Kustomize로 배포
-        cd k8s/overlays/$ENVIRONMENT
-        
-        # ECR URI와 이미지 태그 업데이트
-        kustomize edit set image PLACEHOLDER_ECR_URI=${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}
+        # ECR URI로 이미지 교체
+        cd k8s
+        sed -i "s|PLACEHOLDER_ECR_URI:latest|${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}|g" deployment.yaml
         
         # 배포 실행
-        echo "📋 배포 매니페스트:"
-        kustomize build .
-        
-        echo "🚀 배포 적용 중..."
-        kustomize build . | kubectl apply -f -
+        echo "📋 배포 매니페스트 적용 중..."
+        kubectl apply -f configmap.yaml
+        kubectl apply -f deployment.yaml
+        kubectl apply -f service.yaml
         
         # 배포 상태 확인
-        kubectl rollout status deployment/hello-world-app --timeout=300s
+        echo "⏳ 배포 상태 확인 중..."
+        kubectl rollout status deployment/go-hello-world --timeout=300s
         
         echo "✅ EKS 배포 완료"
 
@@ -124,15 +111,15 @@ jobs:
         echo "🌐 서비스 상태 확인 중..."
         
         # 서비스 정보 출력
-        kubectl get services hello-world-service || echo "서비스를 찾을 수 없습니다"
+        kubectl get services go-hello-world-service || echo "서비스를 찾을 수 없습니다"
         
         # Pod 상태 확인
-        kubectl get pods -l app=hello-world
+        kubectl get pods -l app=go-hello-world
         
         # LoadBalancer 외부 IP 확인 (최대 5분 대기)
         echo "⏳ LoadBalancer 외부 IP 할당 대기 중..."
         for i in {1..10}; do
-          EXTERNAL_IP=$(kubectl get service hello-world-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+          EXTERNAL_IP=$(kubectl get service go-hello-world-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
           if [ ! -z "$EXTERNAL_IP" ]; then
             echo "✅ 서비스 URL: http://$EXTERNAL_IP"
             break
@@ -140,6 +127,10 @@ jobs:
           echo "대기 중... ($i/10)"
           sleep 30
         done
+        
+        # NodePort 정보도 출력
+        NODE_PORT=$(kubectl get service go-hello-world-nodeport -o jsonpath='{.spec.ports[0].nodePort}')
+        echo "🔗 NodePort 접근: <NODE-IP>:$NODE_PORT"
 
     - name: Deployment Summary
       run: |
