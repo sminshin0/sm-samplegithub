@@ -168,56 +168,41 @@ jobs:
           echo "eks_exists=false" >> $GITHUB_OUTPUT
         fi
 
-    - name: Deploy to EKS
-      if: steps.eks_check.outputs.eks_exists == 'true' && github.ref == 'refs/heads/main'
+    - name: Update Kubernetes Manifests for ArgoCD
+      if: github.ref == 'refs/heads/main'
       run: |
-        echo "🚀 EKS에 애플리케이션 배포 중..."
-        
-        # EKS 연결
-        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ steps.eks_check.outputs.cluster_name }}
+        echo "📝 Kubernetes 매니페스트 업데이트 중..."
         
         # ECR URI로 이미지 교체
         cd k8s
         sed -i "s|PLACEHOLDER_ECR_URI:latest|${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}|g" deployment.yaml
         
-        # 배포 실행
-        echo "📋 배포 매니페스트 적용 중..."
-        kubectl apply -f configmap.yaml
-        kubectl apply -f deployment.yaml
-        kubectl apply -f service.yaml
+        # Git 설정
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
         
-        # 배포 상태 확인
-        echo "⏳ 배포 상태 확인 중..."
-        kubectl rollout status deployment/go-hello-world --timeout=300s
+        # 변경사항 커밋 및 푸시
+        git add deployment.yaml
+        git commit -m "🚀 Update image to ${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}" || echo "No changes to commit"
+        git push origin main
         
-        echo "✅ EKS 배포 완료"
+        echo "✅ 매니페스트 업데이트 완료 - ArgoCD가 자동으로 배포합니다"
 
-    - name: Get Service Status
-      if: steps.eks_check.outputs.eks_exists == 'true' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    - name: ArgoCD Sync Status
+      if: github.ref == 'refs/heads/main'
       run: |
-        echo "🌐 서비스 상태 확인 중..."
-        
-        # 서비스 정보 출력
-        kubectl get services go-hello-world-service || echo "서비스를 찾을 수 없습니다"
-        
-        # Pod 상태 확인
-        kubectl get pods -l app=go-hello-world
-        
-        # LoadBalancer 외부 IP 확인 (최대 5분 대기)
-        echo "⏳ LoadBalancer 외부 IP 할당 대기 중..."
-        for i in {1..10}; do
-          EXTERNAL_IP=$(kubectl get service go-hello-world-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-          if [ ! -z "$EXTERNAL_IP" ]; then
-            echo "✅ 서비스 URL: http://$EXTERNAL_IP"
-            break
-          fi
-          echo "대기 중... ($i/10)"
-          sleep 30
-        done
-        
-        # NodePort 정보도 출력
-        NODE_PORT=$(kubectl get service go-hello-world-nodeport -o jsonpath='{.spec.ports[0].nodePort}')
-        echo "🔗 NodePort 접근: <NODE-IP>:$NODE_PORT"
+        echo "🔄 ArgoCD 동기화 상태 안내"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📦 새 이미지: ${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}"
+        echo "📝 매니페스트 업데이트 완료"
+        echo "🔄 ArgoCD가 자동으로 배포를 진행합니다"
+        echo ""
+        echo "🌐 ArgoCD UI에서 배포 상태 확인:"
+        echo "   http://ae7cce26c302e493d992d698088a8000-791673584.us-east-1.elb.amazonaws.com"
+        echo ""
+        echo "📋 배포 확인 명령어:"
+        echo "   kubectl get pods -l app=go-hello-world"
+        echo "   kubectl get services go-hello-world-service"
 
     - name: Deployment Summary
       run: |
