@@ -24,15 +24,17 @@ cd terraform
 # 2. 초기화 (최초 1회)
 terraform init
 
-# 3. 계획 확인 (선택사항)
-terraform plan
-
-# 4. 전체 인프라 배포 (약 15-20분 소요)
+# 3. 전체 인프라 배포 (약 15-20분 소요)
 terraform apply
 
-# 5. 배포 완료 후 kubectl 설정
+# 4. kubectl 설정 (배포 완료 후)
 aws eks update-kubeconfig --region us-east-1 --name sm-eks
+kubectl get nodes
 ```
+
+**주의사항:**
+- AWS CLI가 올바르게 설정되어 있어야 합니다
+- Terraform이 EKS 클러스터를 생성하므로 권한 문제가 없습니다
 
 ### 배포 순서
 1. **S3 + DynamoDB**: Terraform state 관리

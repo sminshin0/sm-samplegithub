@@ -22,6 +22,14 @@ variable "github_actions_user" {
   default     = "sm-user"
 }
 
+variable "create_aws_auth" {
+  description = "Create aws-auth ConfigMap (set to false if encountering issues)"
+  type        = bool
+  default     = true
+}
+
+
+
 variable "eks_cluster_name" {
   description = "EKS cluster name"
   type        = string

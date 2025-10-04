@@ -6,15 +6,41 @@ data "aws_eks_cluster_auth" "main" {
   name = aws_eks_cluster.main.name
 }
 
-# Kubernetes provider 설정
+# Kubernetes provider 설정 (재시도 로직 포함)
 provider "kubernetes" {
   host                   = aws_eks_cluster.main.endpoint
   cluster_ca_certificate = base64decode(aws_eks_cluster.main.certificate_authority[0].data)
   token                  = data.aws_eks_cluster_auth.main.token
+  
+  # 연결 재시도 설정
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args = [
+      "eks",
+      "get-token",
+      "--cluster-name",
+      aws_eks_cluster.main.name,
+      "--region",
+      var.aws_region
+    ]
+  }
 }
 
-# EKS aws-auth ConfigMap 관리
+# EKS 클러스터 준비 대기
+resource "time_sleep" "wait_for_cluster" {
+  depends_on = [
+    aws_eks_cluster.main,
+    aws_eks_node_group.main
+  ]
+  
+  create_duration = "30s"
+}
+
+# EKS aws-auth ConfigMap 관리 (조건부)
 resource "kubernetes_config_map" "aws_auth" {
+  count = var.create_aws_auth ? 1 : 0
+  
   metadata {
     name      = "aws-auth"
     namespace = "kube-system"
@@ -43,7 +69,6 @@ resource "kubernetes_config_map" "aws_auth" {
   }
 
   depends_on = [
-    aws_eks_cluster.main,
-    aws_eks_node_group.main
+    time_sleep.wait_for_cluster
   ]
 }
