@@ -67,7 +67,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     
     permissions:
-      contents: read
+      contents: write  # Git 푸시를 위해 write 권한 필요
       id-token: write
       pull-requests: write
     
@@ -178,8 +178,11 @@ jobs:
         sed -i "s|PLACEHOLDER_ECR_URI:latest|${{ steps.ecr.outputs.ecr_uri }}:${{ env.image_tag }}|g" deployment.yaml
         
         # Git 설정
-        git config --global user.name "GitHub Actions"
-        git config --global user.email "actions@github.com"
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # GITHUB_TOKEN을 사용한 인증 설정
+        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
         
         # 변경사항 커밋 및 푸시
         git add deployment.yaml
