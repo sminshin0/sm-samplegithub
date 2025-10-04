@@ -86,10 +86,14 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Get ECR Repository URI
+    - name: Get or Create ECR Repository
       id: ecr
       run: |
+        echo "🔍 ECR 리포지토리 확인 중..."
+        
+        echo "✅ ECR 리포지토리 발견"
         ECR_URI=$(aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} --query 'repositories[0].repositoryUri' --output text --region ${{ env.AWS_REGION }})
+        
         echo "ecr_uri=$ECR_URI" >> $GITHUB_OUTPUT
         echo "✅ ECR URI: $ECR_URI"
 
@@ -97,11 +101,21 @@ jobs:
       run: |
         cd app
         IMAGE_TAG=v${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)
-        echo "🐳 Docker 이미지 빌드 중..."
-        echo "태그: $IMAGE_TAG"
+        ECR_URI="${{ steps.ecr.outputs.ecr_uri }}"
         
-        docker build -t ${{ steps.ecr.outputs.ecr_uri }}:$IMAGE_TAG .
-        docker tag ${{ steps.ecr.outputs.ecr_uri }}:$IMAGE_TAG ${{ steps.ecr.outputs.ecr_uri }}:latest
+        echo "🐳 Docker 이미지 빌드 중..."
+        echo "ECR URI: $ECR_URI"
+        echo "이미지 태그: $IMAGE_TAG"
+        echo "전체 이미지명: $ECR_URI:$IMAGE_TAG"
+        
+        # ECR URI 검증
+        if [ -z "$ECR_URI" ]; then
+          echo "❌ ECR URI가 비어있습니다!"
+          exit 1
+        fi
+        
+        docker build -t $ECR_URI:$IMAGE_TAG .
+        docker tag $ECR_URI:$IMAGE_TAG $ECR_URI:latest
         
         echo "image_tag=$IMAGE_TAG" >> $GITHUB_ENV
         echo "✅ Docker 이미지 빌드 완료"
