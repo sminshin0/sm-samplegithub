@@ -38,6 +38,16 @@ output "eks_cluster_role_arn" {
   value       = aws_iam_role.eks_cluster_role.arn
 }
 
+output "eks_subnets" {
+  description = "EKS Cluster Subnets"
+  value       = local.selected_subnets
+}
+
+output "vpc_id" {
+  description = "VPC ID"
+  value       = data.aws_vpc.default.id
+}
+
 output "github_actions_user_arn" {
   description = "GitHub Actions IAM User ARN"
   value       = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${var.github_actions_user}"

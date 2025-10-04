@@ -30,11 +30,22 @@ data "aws_vpc" "default" {
   default = true
 }
 
-data "aws_subnets" "default" {
+# EKS 지원 가용 영역만 선택 (최소 2개 필요)
+data "aws_subnets" "eks_subnets" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
   }
+  
+  filter {
+    name   = "availability-zone"
+    values = ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1f"]
+  }
+}
+
+# 최소 2개 서브넷 확보를 위한 검증
+locals {
+  selected_subnets = slice(data.aws_subnets.eks_subnets.ids, 0, min(length(data.aws_subnets.eks_subnets.ids), 3))
 }
 
 # EKS 클러스터 서비스 역할
@@ -131,7 +142,7 @@ resource "aws_eks_cluster" "main" {
   version  = "1.28"
 
   vpc_config {
-    subnet_ids              = data.aws_subnets.default.ids
+    subnet_ids              = local.selected_subnets
     endpoint_private_access = true
     endpoint_public_access  = true
     security_group_ids      = [aws_security_group.eks_cluster.id]
@@ -157,7 +168,7 @@ resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "${var.project_name}-nodes"
   node_role_arn   = aws_iam_role.eks_node_role.arn
-  subnet_ids      = data.aws_subnets.default.ids
+  subnet_ids      = local.selected_subnets
 
   scaling_config {
     desired_size = 2
