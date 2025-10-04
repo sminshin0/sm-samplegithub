@@ -6,8 +6,10 @@
 
 - **웹 서버**: HTTP 서버로 HTML 페이지 제공
 - **헬스체크**: `/health` 엔드포인트로 상태 확인
+- **배포 정보**: `/api/deployment` 엔드포인트로 배포 상태 확인
 - **Docker 지원**: 멀티 스테이지 빌드로 최적화
-- **자동 배포**: GitHub Actions로 ECR에 자동 푸시
+- **EKS 배포**: AWS EKS에 자동 배포
+- **자동 CI/CD**: GitHub Actions로 완전 자동화
 
 ## 📁 구조
 
@@ -38,6 +40,9 @@ docker run -p 8080:8080 go-hello-world
 
 - **메인 페이지**: http://localhost:8080/
 - **헬스체크**: http://localhost:8080/health
+- **앱 정보**: http://localhost:8080/info
+- **현재 시간**: http://localhost:8080/api/time
+- **배포 정보**: http://localhost:8080/api/deployment
 
 ## 🔄 CI/CD 워크플로우
 

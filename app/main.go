@@ -48,6 +48,7 @@ func main() {
 	r.HandleFunc("/health", healthHandler).Methods("GET")
 	r.HandleFunc("/info", infoHandler).Methods("GET")
 	r.HandleFunc("/api/time", timeHandler).Methods("GET")
+	r.HandleFunc("/api/deployment", deploymentHandler).Methods("GET")
 
 	// 미들웨어 추가
 	r.Use(loggingMiddleware)
@@ -83,23 +84,32 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Go Web Application</title>
+    <title>Go Web Application - EKS Deployment</title>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; background: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h1 { color: #00ADD8; margin-bottom: 30px; }
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 30px; background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); color: white; }
+        .container { max-width: 900px; margin: 0 auto; background: rgba(255,255,255,0.95); padding: 40px; border-radius: 15px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); color: #333; }
+        h1 { color: #00ADD8; margin-bottom: 30px; font-size: 2.5em; }
+        .deployment-info { background: linear-gradient(45deg, #28a745, #20c997); color: white; padding: 20px; border-radius: 10px; margin: 20px 0; }
         .info { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: left; }
         .api-links { margin: 20px 0; }
-        .api-links a { display: inline-block; margin: 5px 10px; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }
-        .api-links a:hover { background: #0056b3; }
-        .stats { display: flex; justify-content: space-around; margin: 20px 0; }
+        .api-links a { display: inline-block; margin: 5px 10px; padding: 12px 24px; background: #007bff; color: white; text-decoration: none; border-radius: 25px; transition: all 0.3s; }
+        .api-links a:hover { background: #0056b3; transform: translateY(-2px); }
+        .stats { display: flex; justify-content: space-around; margin: 30px 0; }
         .stat { text-align: center; }
-        .stat-value { font-size: 2em; font-weight: bold; color: #28a745; }
+        .stat-value { font-size: 2.2em; font-weight: bold; color: #28a745; }
+        .new-feature { background: #ff6b6b; color: white; padding: 15px; border-radius: 8px; margin: 20px 0; }
+        .timestamp { font-size: 0.9em; color: #666; margin-top: 20px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎉 Go Web Application</h1>
+        <h1>🚀 Go Web Application</h1>
+        
+        <div class="deployment-info">
+            <h3>🎯 Successfully Deployed to AWS EKS!</h3>
+            <p>This application is running on Kubernetes cluster with automated CI/CD</p>
+            <p><strong>Deployment Time:</strong> %s</p>
+        </div>
         
         <div class="stats">
             <div class="stat">
@@ -107,24 +117,35 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
                 <div>Uptime</div>
             </div>
             <div class="stat">
-                <div class="stat-value">v1.0.0</div>
+                <div class="stat-value">v2.0.0</div>
                 <div>Version</div>
             </div>
             <div class="stat">
-                <div class="stat-value">✅</div>
-                <div>Status</div>
+                <div class="stat-value">🎉</div>
+                <div>EKS Ready</div>
             </div>
         </div>
 
+        <div class="new-feature">
+            <h3>🆕 New Features Added!</h3>
+            <ul style="text-align: left; margin: 10px 0;">
+                <li>✨ Enhanced UI with gradient design</li>
+                <li>🚀 EKS deployment information</li>
+                <li>📊 Real-time deployment status</li>
+                <li>🔄 Automated GitHub Actions CI/CD</li>
+            </ul>
+        </div>
+
         <div class="info">
-            <h3>🛠️ Tech Stack</h3>
+            <h3>🛠️ Infrastructure Stack</h3>
             <ul>
-                <li><strong>Language:</strong> Go 1.21</li>
-                <li><strong>Router:</strong> Gorilla Mux</li>
-                <li><strong>Logging:</strong> Logrus</li>
-                <li><strong>Container:</strong> Docker</li>
-                <li><strong>Deployment:</strong> AWS EKS + ECR</li>
+                <li><strong>Language:</strong> Go 1.21 with Gorilla Mux</li>
+                <li><strong>Container:</strong> Docker (Multi-stage build)</li>
+                <li><strong>Registry:</strong> AWS ECR</li>
+                <li><strong>Orchestration:</strong> AWS EKS (Kubernetes)</li>
+                <li><strong>Infrastructure:</strong> Terraform (IaC)</li>
                 <li><strong>CI/CD:</strong> GitHub Actions</li>
+                <li><strong>Monitoring:</strong> Structured logging with Logrus</li>
             </ul>
         </div>
 
@@ -133,12 +154,17 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
             <a href="/health">Health Check</a>
             <a href="/info">App Info</a>
             <a href="/api/time">Current Time</a>
+            <a href="/api/deployment">Deployment Info</a>
         </div>
 
-        <p>✅ Application is running successfully!</p>
+        <div class="timestamp">
+            <p>🕒 Last updated: %s | 🌍 Running on EKS cluster</p>
+        </div>
+        
+        <p style="font-size: 1.2em; color: #28a745;">✅ Application successfully deployed and running on AWS EKS!</p>
     </div>
 </body>
-</html>`, uptime.Round(time.Second))
+</html>`, time.Now().Format("2006-01-02 15:04:05 UTC"), uptime.Round(time.Second), time.Now().Format("2006-01-02 15:04:05"))
 
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprint(w, html)
@@ -187,6 +213,39 @@ func timeHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func deploymentHandler(w http.ResponseWriter, r *http.Request) {
+	deployment := map[string]interface{}{
+		"application": map[string]string{
+			"name":    "github-actions-terraform-app",
+			"version": "2.0.0",
+			"status":  "running",
+		},
+		"infrastructure": map[string]string{
+			"platform":    "AWS EKS",
+			"region":      getEnv("AWS_REGION", "us-east-1"),
+			"environment": getEnv("ENVIRONMENT", "production"),
+		},
+		"deployment": map[string]interface{}{
+			"method":     "GitHub Actions + Terraform",
+			"container":  "Docker (ECR)",
+			"started_at": startTime,
+			"uptime":     time.Since(startTime),
+		},
+		"kubernetes": map[string]string{
+			"namespace": getEnv("KUBERNETES_NAMESPACE", "default"),
+			"pod_name":  getEnv("HOSTNAME", "unknown"),
+		},
+		"build_info": map[string]string{
+			"go_version": "1.21",
+			"git_commit": getEnv("GIT_COMMIT", "unknown"),
+			"build_time": getEnv("BUILD_TIME", time.Now().Format(time.RFC3339)),
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(deployment)
 }
 
 func getEnv(key, defaultValue string) string {
