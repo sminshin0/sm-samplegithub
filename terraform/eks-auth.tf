@@ -37,38 +37,29 @@ resource "time_sleep" "wait_for_cluster" {
   create_duration = "30s"
 }
 
-# EKS aws-auth ConfigMap 관리 (조건부)
-resource "kubernetes_config_map" "aws_auth" {
+# EKS aws-auth 설정 (eksctl 사용 - 더 안전함)
+resource "null_resource" "aws_auth" {
   count = var.create_aws_auth ? 1 : 0
   
-  metadata {
-    name      = "aws-auth"
-    namespace = "kube-system"
-  }
-
-  data = {
-    mapUsers = yamlencode([
-      {
-        userarn  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${var.github_actions_user}"
-        username = "github-actions"
-        groups   = ["system:masters"]
-      }
-    ])
-    
-    # 노드 그룹 역할 (자동 생성됨)
-    mapRoles = yamlencode([
-      {
-        rolearn  = aws_iam_role.eks_node_role.arn
-        username = "system:node:{{EC2PrivateDNSName}}"
-        groups   = [
-          "system:bootstrappers",
-          "system:nodes"
-        ]
-      }
-    ])
+  provisioner "local-exec" {
+    command = <<-EOT
+      # GitHub Actions 사용자 권한 추가
+      eksctl create iamidentitymapping \
+        --cluster ${aws_eks_cluster.main.name} \
+        --region ${var.aws_region} \
+        --arn arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${var.github_actions_user} \
+        --group system:masters \
+        --username github-actions \
+        --no-duplicate-arns || echo "IAM identity mapping may already exist"
+    EOT
   }
 
   depends_on = [
     time_sleep.wait_for_cluster
   ]
+
+  triggers = {
+    cluster_name = aws_eks_cluster.main.name
+    user_arn     = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${var.github_actions_user}"
+  }
 }

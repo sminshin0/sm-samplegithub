@@ -34,7 +34,16 @@ kubectl get nodes
 
 **주의사항:**
 - AWS CLI가 올바르게 설정되어 있어야 합니다
+- `eksctl` 명령어가 설치되어 있어야 합니다 (aws-auth 설정용)
 - Terraform이 EKS 클러스터를 생성하므로 권한 문제가 없습니다
+
+**eksctl 설치:**
+```bash
+# macOS
+brew install weaveworks/tap/eksctl
+
+# 또는 다른 방법: https://eksctl.io/installation/
+```
 
 ### 배포 순서
 1. **S3 + DynamoDB**: Terraform state 관리
