@@ -137,7 +137,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
         </div>
 
         <div class="info">
-            <h3>🛠️ Infrastructure Stack!!!!</h3>
+            <h3>🛠️ Infrastructure Stack@@@@</h3>
             <ul>
                 <li><strong>Language:</strong> Go 1.21 with Gorilla Mux</li>
                 <li><strong>Container:</strong> Docker (Multi-stage build)</li>
