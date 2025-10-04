@@ -158,11 +158,13 @@ jobs:
     - name: Check EKS Cluster
       id: eks_check
       run: |
-        if aws eks describe-cluster --name sm-eks --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
-          echo "✅ EKS 클러스터 발견"
+        EKS_CLUSTER_NAME="sm-eks"
+        if aws eks describe-cluster --name $EKS_CLUSTER_NAME --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+          echo "✅ EKS 클러스터 발견: $EKS_CLUSTER_NAME"
           echo "eks_exists=true" >> $GITHUB_OUTPUT
+          echo "cluster_name=$EKS_CLUSTER_NAME" >> $GITHUB_OUTPUT
         else
-          echo "ℹ️  EKS 클러스터가 없습니다"
+          echo "ℹ️  EKS 클러스터가 없습니다: $EKS_CLUSTER_NAME"
           echo "eks_exists=false" >> $GITHUB_OUTPUT
         fi
 
@@ -172,7 +174,7 @@ jobs:
         echo "🚀 EKS에 애플리케이션 배포 중..."
         
         # EKS 연결
-        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name sm-eks
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ steps.eks_check.outputs.cluster_name }}
         
         # ECR URI로 이미지 교체
         cd k8s

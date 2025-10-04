@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.23"
+    }
   }
   required_version = ">= 1.0"
 
@@ -23,11 +27,11 @@ provider "aws" {
 
 # 기존 EKS 클러스터 참조 (수동으로 생성됨)
 data "aws_eks_cluster" "existing_cluster" {
-  name = "sm-eks"
+  name = var.eks_cluster_name
 }
 
 data "aws_eks_cluster_auth" "existing_cluster" {
-  name = "sm-eks"
+  name = var.eks_cluster_name
 }
 
 # 기존 EKS 노드 역할 참조 (수동으로 생성됨)

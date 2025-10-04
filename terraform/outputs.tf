@@ -28,6 +28,16 @@ output "eks_node_role_arn" {
   value       = data.aws_iam_role.existing_node_role.arn
 }
 
+output "github_actions_user_arn" {
+  description = "GitHub Actions IAM User ARN"
+  value       = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${var.github_actions_user}"
+}
+
+output "aws_auth_config_applied" {
+  description = "AWS Auth ConfigMap applied status"
+  value       = "GitHub Actions user ${var.github_actions_user} has been granted access to EKS cluster ${var.eks_cluster_name}"
+}
+
 output "dynamodb_table_name" {
   description = "DynamoDB Table Name for Terraform State Locking"
   value       = aws_dynamodb_table.terraform_state_lock.name
