@@ -10,22 +10,32 @@ output "ecr_repository_arn" {
 
 output "eks_cluster_name" {
   description = "EKS Cluster Name"
-  value       = data.aws_eks_cluster.existing_cluster.name
+  value       = aws_eks_cluster.main.name
 }
 
 output "eks_cluster_endpoint" {
   description = "EKS Cluster Endpoint"
-  value       = data.aws_eks_cluster.existing_cluster.endpoint
+  value       = aws_eks_cluster.main.endpoint
 }
 
 output "eks_cluster_version" {
   description = "EKS Cluster Version"
-  value       = data.aws_eks_cluster.existing_cluster.version
+  value       = aws_eks_cluster.main.version
+}
+
+output "eks_cluster_arn" {
+  description = "EKS Cluster ARN"
+  value       = aws_eks_cluster.main.arn
 }
 
 output "eks_node_role_arn" {
   description = "EKS Node Group Role ARN"
-  value       = data.aws_iam_role.existing_node_role.arn
+  value       = aws_iam_role.eks_node_role.arn
+}
+
+output "eks_cluster_role_arn" {
+  description = "EKS Cluster Role ARN"
+  value       = aws_iam_role.eks_cluster_role.arn
 }
 
 output "github_actions_user_arn" {
