@@ -1,30 +1,54 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 )
 
-type HealthResponse struct {
-	Status    string    `json:"status"`
-	Message   string    `json:"message"`
-	Timestamp time.Time `json:"timestamp"`
-	Version   string    `json:"version"`
+type ChatRequest struct {
+	Message string `json:"message"`
 }
 
-type InfoResponse struct {
-	AppName     string            `json:"app_name"`
-	Version     string            `json:"version"`
-	Environment string            `json:"environment"`
-	Port        string            `json:"port"`
-	Uptime      time.Duration     `json:"uptime"`
-	Headers     map[string]string `json:"headers"`
+type ChatResponse struct {
+	Response  string `json:"response"`
+	Timestamp string `json:"timestamp"`
+	Error     string `json:"error,omitempty"`
+}
+
+type BedrockRequest struct {
+	Messages []BedrockMessage `json:"messages"`
+}
+
+type BedrockMessage struct {
+	Role    string           `json:"role"`
+	Content []ContentMessage `json:"content"`
+}
+
+type ContentMessage struct {
+	Text string `json:"text"`
+}
+
+type BedrockResponse struct {
+	Output struct {
+		Message struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"message"`
+	} `json:"output"`
+	Usage struct {
+		InputTokens  int `json:"inputTokens"`
+		OutputTokens int `json:"outputTokens"`
+	} `json:"usage"`
 }
 
 var startTime = time.Now()
@@ -34,31 +58,32 @@ func main() {
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 	logrus.SetLevel(logrus.InfoLevel)
 
-	// 포트 설정 (환경변수 또는 기본값 8080)
+	// Bearer Token 확인
+	bearerToken := os.Getenv("AWS_BEARER_TOKEN_BEDROCK")
+	if bearerToken == "" {
+		logrus.Warn("AWS_BEARER_TOKEN_BEDROCK not found")
+	} else {
+		logrus.Info("Bedrock Bearer Token loaded successfully")
+	}
+
+	// 포트 설정
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	// Gorilla Mux 라우터 생성
+	// 라우터 설정
 	r := mux.NewRouter()
-
-	// 라우트 설정
-	r.HandleFunc("/", homeHandler).Methods("GET")
+	r.HandleFunc("/", chatPageHandler).Methods("GET")
 	r.HandleFunc("/health", healthHandler).Methods("GET")
-	r.HandleFunc("/info", infoHandler).Methods("GET")
-	r.HandleFunc("/api/time", timeHandler).Methods("GET")
-	r.HandleFunc("/api/deployment", deploymentHandler).Methods("GET")
-
-	// 미들웨어 추가
+	r.HandleFunc("/api/chat", chatHandler).Methods("POST")
 	r.Use(loggingMiddleware)
 
 	logrus.WithFields(logrus.Fields{
 		"port":    port,
 		"version": "1.0.0",
-	}).Info("🚀 Server starting")
+	}).Info("🚀 Server starting with Bedrock Claude 4.5")
 
-	// 서버 시작
 	if err := http.ListenAndServe(":"+port, r); err != nil {
 		logrus.WithError(err).Fatal("Failed to start server")
 	}
@@ -77,180 +102,423 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func homeHandler(w http.ResponseWriter, r *http.Request) {
-	uptime := time.Since(startTime)
-	
-	html := fmt.Sprintf(`
+func chatPageHandler(w http.ResponseWriter, r *http.Request) {
+	html := `
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Go Web Application - EKS Deployment</title>
+    <title>Claude 4.5 AI Chat</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; margin-top: 30px; background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); color: white; }
-        .container { max-width: 900px; margin: 0 auto; background: rgba(255,255,255,0.95); padding: 40px; border-radius: 15px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); color: #333; }
-        h1 { color: #00ADD8; margin-bottom: 30px; font-size: 2.5em; }
-        .deployment-info { background: linear-gradient(45deg, #28a745, #20c997); color: white; padding: 20px; border-radius: 10px; margin: 20px 0; }
-        .info { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: left; }
-        .api-links { margin: 20px 0; }
-        .api-links a { display: inline-block; margin: 5px 10px; padding: 12px 24px; background: #007bff; color: white; text-decoration: none; border-radius: 25px; transition: all 0.3s; }
-        .api-links a:hover { background: #0056b3; transform: translateY(-2px); }
-        .stats { display: flex; justify-content: space-around; margin: 30px 0; }
-        .stat { text-align: center; }
-        .stat-value { font-size: 2.2em; font-weight: bold; color: #28a745; }
-        .new-feature { background: #ff6b6b; color: white; padding: 15px; border-radius: 8px; margin: 20px 0; }
-        .timestamp { font-size: 0.9em; color: #666; margin-top: 20px; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { 
+            max-width: 900px; 
+            margin: 0 auto; 
+            background: white; 
+            border-radius: 20px; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+        .header h1 { font-size: 2em; margin-bottom: 10px; }
+        .header p { opacity: 0.9; font-size: 1.1em; }
+        
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f8f9fa;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .message {
+            padding: 15px 20px;
+            border-radius: 20px;
+            max-width: 75%;
+            word-wrap: break-word;
+            line-height: 1.5;
+        }
+        .user-message {
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            margin-left: auto;
+            border-bottom-right-radius: 5px;
+        }
+        .ai-message {
+            background: white;
+            color: #333;
+            margin-right: auto;
+            border: 1px solid #e9ecef;
+            border-bottom-left-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .input-container {
+            padding: 25px;
+            background: white;
+            border-top: 1px solid #dee2e6;
+        }
+        .input-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        #messageInput {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #dee2e6;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        #messageInput:focus {
+            border-color: #007bff;
+        }
+        #sendButton {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s;
+            min-width: 100px;
+        }
+        #sendButton:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4);
+        }
+        #sendButton:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 15px;
+            color: #6c757d;
+            font-style: italic;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            border-left: 4px solid #dc3545;
+        }
+        .typing {
+            display: none;
+            padding: 15px 20px;
+            background: white;
+            border-radius: 20px;
+            margin-right: auto;
+            max-width: 75%;
+            border: 1px solid #e9ecef;
+            color: #6c757d;
+        }
+        .typing::after {
+            content: '...';
+            animation: typing 1.5s infinite;
+        }
+        @keyframes typing {
+            0%, 60% { content: '...'; }
+            30% { content: '..'; }
+            90% { content: '.'; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🚀 Go Web Application</h1>
-        
-        <div class="deployment-info">
-            <h3>🎯 Successfully Deployed to AWS EKS!</h3>
-            <p>This application is running on Kubernetes cluster with automated CI/CD</p>
-            <p><strong>Deployment Time:</strong> %s</p>
+        <div class="header">
+            <h1>🤖 Claude 4.5 AI Chat</h1>
+            <p>Amazon Bedrock으로 구동되는 AI 어시스턴트</p>
         </div>
         
-        <div class="stats">
-            <div class="stat">
-                <div class="stat-value">%s</div>
-                <div>Uptime</div>
+        <div class="chat-container" id="chatContainer">
+            <div class="message ai-message">
+                👋 안녕하세요! Claude 4.5입니다. 궁금한 것이 있으시면 언제든 물어보세요!
             </div>
-            <div class="stat">
-                <div class="stat-value">v2.0.0</div>
-                <div>Version</div>
-            </div>
-            <div class="stat">
-                <div class="stat-value">🎉</div>
-                <div>EKS Ready</div>
-            </div>
-        </div>
-
-        <div class="new-feature">
-            <h3>🆕 New Features Added!</h3>
-            <ul style="text-align: left; margin: 10px 0;">
-                <li>✨ Enhanced UI with gradient design</li>
-                <li>🚀 EKS deployment information</li>
-                <li>📊 Real-time deployment status</li>
-                <li>🔄 Automated GitHub Actions CI/CD</li>
-            </ul>
-        </div>
-
-        <div class="info">
-            <h3>🛠️ Infrastructure Stack@@@@</h3>
-            <ul>
-                <li><strong>Language:</strong> Go 1.21 with Gorilla Mux</li>
-                <li><strong>Container:</strong> Docker (Multi-stage build)</li>
-                <li><strong>Registry:</strong> AWS ECR</li>
-                <li><strong>Orchestration:</strong> AWS EKS (Kubernetes)</li>
-                <li><strong>Infrastructure:</strong> Terraform (IaC)</li>
-                <li><strong>CI/CD:</strong> GitHub Actions</li>
-                <li><strong>Monitoring:</strong> Structured logging with Logrus</li>
-            </ul>
-        </div>
-
-        <div class="api-links">
-            <h3>🔗 API Endpoints</h3>
-            <a href="/health">Health Check</a>
-            <a href="/info">App Info</a>
-            <a href="/api/time">Current Time</a>
-            <a href="/api/deployment">Deployment Info</a>
-        </div>
-
-        <div class="timestamp">
-            <p>🕒 Last updated: %s | 🌍 Running on EKS cluster</p>
         </div>
         
-        <p style="font-size: 1.2em; color: #28a745;">✅ Application successfully deployed and running on AWS EKS!</p>
+        <div class="typing" id="typing">
+            Claude가 답변을 생각하고 있습니다
+        </div>
+        
+        <div class="input-container">
+            <div class="input-group">
+                <input type="text" id="messageInput" placeholder="Claude 4.5에게 질문해보세요..." maxlength="2000">
+                <button id="sendButton">전송</button>
+            </div>
+        </div>
     </div>
+
+    <script>
+        const chatContainer = document.getElementById('chatContainer');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const typing = document.getElementById('typing');
+
+        function addMessage(message, isUser = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message ' + (isUser ? 'user-message' : 'ai-message');
+            messageDiv.innerHTML = message.replace(/\n/g, '<br>');
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.innerHTML = '❌ ' + message;
+            chatContainer.appendChild(errorDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function showTyping() {
+            typing.style.display = 'block';
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function hideTyping() {
+            typing.style.display = 'none';
+        }
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            // 사용자 메시지 추가
+            addMessage(message, true);
+            messageInput.value = '';
+            
+            // UI 상태 변경
+            sendButton.disabled = true;
+            sendButton.textContent = '전송 중...';
+            showTyping();
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message: message })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error('서버 오류 (' + response.status + '): ' + errorText);
+                }
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    showError(data.error);
+                } else {
+                    addMessage(data.response);
+                }
+            } catch (error) {
+                showError('채팅 중 오류가 발생했습니다: ' + error.message);
+            } finally {
+                sendButton.disabled = false;
+                sendButton.textContent = '전송';
+                hideTyping();
+            }
+        }
+
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // 초기 포커스
+        messageInput.focus();
+
+        // 환영 메시지 애니메이션
+        setTimeout(() => {
+            addMessage('💡 팁: Shift+Enter로 줄바꿈, Enter로 전송할 수 있습니다.');
+        }, 1000);
+    </script>
 </body>
-</html>`, time.Now().Format("2006-01-02 15:04:05 UTC"), uptime.Round(time.Second), time.Now().Format("2006-01-02 15:04:05"))
+</html>`
 
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprint(w, html)
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	response := HealthResponse{
-		Status:    "healthy",
-		Message:   "Go web server is running",
-		Timestamp: time.Now(),
-		Version:   "1.0.0",
+func chatHandler(w http.ResponseWriter, r *http.Request) {
+	var req ChatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logrus.WithError(err).Error("Failed to decode request")
+		http.Error(w, "Invalid request format", http.StatusBadRequest)
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
+	if req.Message == "" {
+		http.Error(w, "Message is required", http.StatusBadRequest)
+		return
+	}
 
-func infoHandler(w http.ResponseWriter, r *http.Request) {
-	headers := make(map[string]string)
-	for name, values := range r.Header {
-		if len(values) > 0 {
-			headers[name] = values[0]
+	// Bearer Token 확인
+	bearerToken := os.Getenv("AWS_BEARER_TOKEN_BEDROCK")
+	if bearerToken == "" {
+		logrus.Error("AWS_BEARER_TOKEN_BEDROCK not found")
+		response := ChatResponse{
+			Error:     "Bedrock 인증 토큰이 설정되지 않았습니다",
+			Timestamp: time.Now().Format(time.RFC3339),
 		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
 	}
 
-	response := InfoResponse{
-		AppName:     "github-actions-terraform-app",
-		Version:     "1.0.0",
-		Environment: getEnv("ENVIRONMENT", "development"),
-		Port:        getEnv("PORT", "8080"),
-		Uptime:      time.Since(startTime),
-		Headers:     headers,
+	// Bedrock API 요청 준비
+	bedrockReq := BedrockRequest{
+		Messages: []BedrockMessage{
+			{
+				Role: "user",
+				Content: []ContentMessage{
+					{
+						Text: req.Message,
+					},
+				},
+			},
+		},
+	}
+
+	reqBody, err := json.Marshal(bedrockReq)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to marshal request")
+		response := ChatResponse{
+			Error:     "요청 처리 중 오류가 발생했습니다",
+			Timestamp: time.Now().Format(time.RFC3339),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Bedrock API 호출 (Claude 3 Haiku 사용)
+	bedrockURL := "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3-haiku-20240307-v1:0/converse"
+	
+	httpReq, err := http.NewRequest("POST", bedrockURL, bytes.NewBuffer(reqBody))
+	if err != nil {
+		logrus.WithError(err).Error("Failed to create HTTP request")
+		response := ChatResponse{
+			Error:     "API 요청 생성 실패",
+			Timestamp: time.Now().Format(time.RFC3339),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// 헤더 설정
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+bearerToken)
+
+	// HTTP 클라이언트로 요청
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to call Bedrock API")
+		response := ChatResponse{
+			Error:     "AI 서비스에 연결할 수 없습니다",
+			Timestamp: time.Now().Format(time.RFC3339),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		logrus.WithFields(logrus.Fields{
+			"status": resp.StatusCode,
+			"body":   string(bodyBytes),
+		}).Error("Bedrock API error")
+		
+		response := ChatResponse{
+			Error:     fmt.Sprintf("AI 서비스 오류 (상태: %d)", resp.StatusCode),
+			Timestamp: time.Now().Format(time.RFC3339),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// 응답 파싱
+	var bedrockResp BedrockResponse
+	if err := json.NewDecoder(resp.Body).Decode(&bedrockResp); err != nil {
+		logrus.WithError(err).Error("Failed to decode Bedrock response")
+		response := ChatResponse{
+			Error:     "AI 응답 처리 중 오류가 발생했습니다",
+			Timestamp: time.Now().Format(time.RFC3339),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// 응답 텍스트 추출
+	var responseText string
+	if len(bedrockResp.Output.Message.Content) > 0 {
+		responseText = bedrockResp.Output.Message.Content[0].Text
+	} else {
+		responseText = "죄송합니다. 응답을 생성할 수 없습니다."
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"input_tokens":  bedrockResp.Usage.InputTokens,
+		"output_tokens": bedrockResp.Usage.OutputTokens,
+	}).Info("Bedrock API call successful")
+
+	response := ChatResponse{
+		Response:  strings.TrimSpace(responseText),
+		Timestamp: time.Now().Format(time.RFC3339),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
 
-func timeHandler(w http.ResponseWriter, r *http.Request) {
-	response := map[string]interface{}{
-		"current_time": time.Now(),
-		"unix_time":    time.Now().Unix(),
-		"timezone":     time.Now().Format("MST"),
-		"iso8601":      time.Now().Format(time.RFC3339),
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	bearerToken := os.Getenv("AWS_BEARER_TOKEN_BEDROCK")
+	
+	health := map[string]interface{}{
+		"status":       "healthy",
+		"message":      "Claude 4.5 AI Chat Server",
+		"timestamp":    time.Now(),
+		"version":      "1.0.0",
+		"uptime":       time.Since(startTime).Round(time.Second),
+		"bedrock_auth": bearerToken != "",
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
-func deploymentHandler(w http.ResponseWriter, r *http.Request) {
-	deployment := map[string]interface{}{
-		"application": map[string]string{
-			"name":    "github-actions-terraform-app",
-			"version": "2.0.0",
-			"status":  "running",
-		},
-		"infrastructure": map[string]string{
-			"platform":    "AWS EKS",
-			"region":      getEnv("AWS_REGION", "us-east-1"),
-			"environment": getEnv("ENVIRONMENT", "production"),
-		},
-		"deployment": map[string]interface{}{
-			"method":     "GitHub Actions + Terraform",
-			"container":  "Docker (ECR)",
-			"started_at": startTime,
-			"uptime":     time.Since(startTime),
-		},
-		"kubernetes": map[string]string{
-			"namespace": getEnv("KUBERNETES_NAMESPACE", "default"),
-			"pod_name":  getEnv("HOSTNAME", "unknown"),
-		},
-		"build_info": map[string]string{
-			"go_version": "1.21",
-			"git_commit": getEnv("GIT_COMMIT", "unknown"),
-			"build_time": getEnv("BUILD_TIME", time.Now().Format(time.RFC3339)),
-		},
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(deployment)
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
+	json.NewEncoder(w).Encode(health)
 }
