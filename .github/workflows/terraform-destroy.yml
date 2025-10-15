@@ -1,0 +1,151 @@
+name: 'Terraform Destroy'
+
+# 수동으로만 실행 가능 (안전을 위해)
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_destroy:
+        description: '정말로 모든 인프라를 삭제하시겠습니까? (yes/no)'
+        required: true
+        default: 'no'
+        type: choice
+        options:
+        - 'no'
+        - 'yes'
+
+env:
+  AWS_REGION: 'us-east-1'
+  TF_VERSION: '1.5.7'
+
+jobs:
+  terraform-destroy:
+    name: 'Terraform Destroy'
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm_destroy == 'yes'
+    
+    permissions:
+      contents: read
+      id-token: write
+    
+    environment:
+      name: production
+    
+    steps:
+    - name: ⚠️ Destruction Warning
+      run: |
+        echo "🚨 경고: 모든 AWS 인프라가 삭제됩니다!"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "삭제될 자원들:"
+        echo "  - EKS 클러스터 (sm-eks)"
+        echo "  - EKS 노드 그룹"
+        echo "  - ECR 리포지토리"
+        echo "  - IAM 역할들"
+        echo "  - 보안 그룹"
+        echo "  - S3 버킷 (terraform state)"
+        echo "  - DynamoDB 테이블 (terraform lock)"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "⏰ 30초 대기 중... (취소하려면 Actions에서 중단하세요)"
+        sleep 30
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init -input=false
+
+    - name: Pre-Destroy Cleanup
+      run: |
+        echo "🧹 사전 정리 작업 중..."
+        
+        # ECR 이미지들 삭제 (ECR 리포지토리 삭제를 위해)
+        echo "📦 ECR 이미지 정리 중..."
+        aws ecr list-images --repository-name github-actions-terraform-app --region ${{ env.AWS_REGION }} --query 'imageIds[*]' --output json > images.json || echo "ECR 리포지토리가 없거나 이미지가 없습니다."
+        
+        if [ -s images.json ] && [ "$(cat images.json)" != "[]" ]; then
+          aws ecr batch-delete-image --repository-name github-actions-terraform-app --region ${{ env.AWS_REGION }} --image-ids file://images.json || echo "이미지 삭제 실패 또는 이미 삭제됨"
+        fi
+        
+        # EKS 클러스터의 LoadBalancer 서비스들 정리
+        echo "🔧 EKS LoadBalancer 서비스 정리 중..."
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name sm-eks || echo "EKS 클러스터에 연결할 수 없습니다."
+        kubectl delete service --all -n default --timeout=300s || echo "서비스 삭제 실패 또는 이미 삭제됨"
+        
+        echo "✅ 사전 정리 완료"
+
+    - name: Terraform Plan Destroy
+      id: plan_destroy
+      run: |
+        cd terraform
+        echo "📋 삭제 계획 확인 중..."
+        terraform plan -destroy -no-color -out=destroy.tfplan
+        terraform show -no-color destroy.tfplan
+
+    - name: Terraform Destroy
+      id: destroy
+      run: |
+        cd terraform
+        echo "🗑️ 인프라 삭제 시작..."
+        terraform destroy -auto-approve -no-color
+        echo "✅ Terraform 자원 삭제 완료!"
+
+    - name: Post-Destroy Cleanup
+      run: |
+        echo "🧹 후속 정리 작업 중..."
+        
+        # S3 버킷 강제 삭제 (버전이 있는 경우)
+        echo "🗑️ S3 버킷 정리 중..."
+        aws s3 rm s3://terraform-state-us-east-1-0ss4kx0a --recursive || echo "S3 버킷이 이미 삭제되었거나 없습니다."
+        aws s3 rb s3://terraform-state-us-east-1-0ss4kx0a --force || echo "S3 버킷 삭제 실패 또는 이미 삭제됨"
+        
+        # DynamoDB 테이블 삭제 확인
+        echo "🗑️ DynamoDB 테이블 확인 중..."
+        aws dynamodb describe-table --table-name my-terraform-project-terraform-state-lock --region ${{ env.AWS_REGION }} || echo "DynamoDB 테이블이 이미 삭제되었습니다."
+        
+        echo "✅ 후속 정리 완료"
+
+    - name: Destruction Summary
+      run: |
+        echo ""
+        echo "🎉 인프라 삭제 완료!"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "삭제된 자원들:"
+        echo "  ✅ EKS 클러스터 및 노드 그룹"
+        echo "  ✅ ECR 리포지토리 및 이미지들"
+        echo "  ✅ IAM 역할 및 정책들"
+        echo "  ✅ 보안 그룹"
+        echo "  ✅ S3 버킷 (terraform state)"
+        echo "  ✅ DynamoDB 테이블 (terraform lock)"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "💰 AWS 비용이 더 이상 발생하지 않습니다."
+        echo "🔄 필요시 terraform apply로 다시 생성할 수 있습니다."
+
+  terraform-destroy-cancelled:
+    name: 'Destroy Cancelled'
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm_destroy != 'yes'
+    
+    steps:
+    - name: Cancellation Notice
+      run: |
+        echo "❌ 인프라 삭제가 취소되었습니다."
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "💡 인프라를 삭제하려면:"
+        echo "   1. Actions 탭에서 'Terraform Destroy' 워크플로우 선택"
+        echo "   2. 'Run workflow' 클릭"
+        echo "   3. 'confirm_destroy'를 'yes'로 선택"
+        echo "   4. 'Run workflow' 실행"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

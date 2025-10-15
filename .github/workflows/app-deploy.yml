@@ -201,7 +201,7 @@ jobs:
         echo "🔄 ArgoCD가 자동으로 배포를 진행합니다"
         echo ""
         echo "🌐 ArgoCD UI에서 배포 상태 확인:"
-        echo "   http://ae7cce26c302e493d992d698088a8000-791673584.us-east-1.elb.amazonaws.com"
+        echo "   http://[ArgoCD-LoadBalancer-URL]"
         echo ""
         echo "📋 배포 확인 명령어:"
         echo "   kubectl get pods -l app=go-hello-world"

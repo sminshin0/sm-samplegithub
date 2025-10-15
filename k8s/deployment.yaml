@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: go-hello-world
-        image: 727158410149.dkr.ecr.us-east-1.amazonaws.com/github-actions-terraform-app:v18-6d6a3b7  # GitHub Actions에서 동적으로 교체
+        image: PLACEHOLDER_ECR_URI:latest  # GitHub Actions에서 동적으로 교체
         ports:
         - containerPort: 8080
           name: http
